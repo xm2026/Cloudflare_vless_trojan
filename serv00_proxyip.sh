@@ -14,9 +14,6 @@ reading() { read -p "$(red "$1")" "$2"; }
 
 USERNAME=$(whoami)
 HOSTNAME=$(hostname)
-export NEZHA_SERVER=${NEZHA_SERVER:-''} 
-export NEZHA_PORT=${NEZHA_PORT:-'5555'}     
-export NEZHA_KEY=${NEZHA_KEY:-''}
 
 [[ "$HOSTNAME" == "s1.ct8.pl" ]] && WORKDIR="domains/${USERNAME}.ct8.pl/logs" || WORKDIR="domains/${USERNAME}.serv00.net/logs"
 [ -d "$WORKDIR" ] || (mkdir -p "$WORKDIR" && chmod 777 "$WORKDIR")
@@ -76,32 +73,14 @@ read_hy2_port() {
 
 read_vmess_port() {
     while true; do
-        reading "请输入vmess+ws端口 (面板开放的tcp端口): " vmess_port
+        reading "请输入vmess-ws端口 (面板开放的tcp端口): " vmess_port
         if [[ "$vmess_port" =~ ^[0-9]+$ ]] && [ "$vmess_port" -ge 1 ] && [ "$vmess_port" -le 65535 ]; then
-            green "你的tuic端口为: $tuic_port"
+            green "你的vmess端口为: $vmess_port"
             break
         else
             yellow "输入错误，请重新输入面板开放的tcp端口"
         fi
     done
-}
-
-read_nz_variables() {
-  if [ -n "$NEZHA_SERVER" ] && [ -n "$NEZHA_PORT" ] && [ -n "$NEZHA_KEY" ]; then
-      green "使用自定义变量哪吒运行哪吒探针"
-      return
-  else
-      reading "是否需要安装哪吒探针？【y/n】: " nz_choice
-      [[ -z $nz_choice ]] && return
-      [[ "$nz_choice" != "y" && "$nz_choice" != "Y" ]] && return
-      reading "请输入哪吒探针域名或ip：" NEZHA_SERVER
-      green "你的哪吒域名为: $NEZHA_SERVER"
-      reading "请输入哪吒探针端口（回车跳过默认使用5555）：" NEZHA_PORT
-      [[ -z $NEZHA_PORT ]] && NEZHA_PORT="5555"
-      green "你的哪吒端口为: $NEZHA_PORT"
-      reading "请输入哪吒探针密钥：" NEZHA_KEY
-      green "你的哪吒密钥为: $NEZHA_KEY"
-  fi
 }
 
 install_singbox() {
@@ -111,7 +90,6 @@ fi
 yellow "请确保在Serv00网页设置中已开放3个端口：2个tcp端口、1个udp端口"
 sleep 2
         cd $WORKDIR
-        #read_nz_variables
 	echo
 	read_ip
 	echo
@@ -125,6 +103,7 @@ sleep 2
         echo
         read_hy2_port
 	echo
+        sleep 2
         argo_configure
         echo
         download_and_run_singbox
@@ -159,7 +138,7 @@ argo_configure() {
   while true; do
     yellow "Argo临时隧道 (无需域名，推荐)"
     yellow "Argo固定隧道 (需要域名，需要CF设置提取Token)"
-    echo -e "${red}注意：${purple}Argo固定隧道使用token时，需要在cloudflare后台设置隧道端口，该端口必须与vmess+ws的tcp端口一致)${re}"
+    echo -e "${red}注意：${purple}Argo固定隧道使用Token时，需要在cloudflare后台设置隧道端口，该端口必须与vmess-ws的tcp端口一致)${re}"
     reading "输入 g 表示使用Argo固定隧道 ；回车跳过 表示使用Argo临时隧道 【g/回车】: " argo_choice
     if [[ "$argo_choice" != "g" && "$argo_choice" != "G" && -n "$argo_choice" ]]; then
         red "无效的选择，请输入 g 或回车"
@@ -168,7 +147,7 @@ argo_configure() {
     if [[ "$argo_choice" == "g" || "$argo_choice" == "G" ]]; then
         reading "请输入argo固定隧道域名: " ARGO_DOMAIN
         green "你的argo固定隧道域名为: $ARGO_DOMAIN"
-        reading "请输入argo固定隧道密钥（Json或Token）: " ARGO_AUTH
+        reading "请输入argo固定隧道密钥（Json或Token。当你粘贴Token时，必须以ey开头）: " ARGO_AUTH
         green "你的argo固定隧道密钥为: $ARGO_AUTH"
     else
         green "使用Argo临时隧道"
@@ -193,14 +172,13 @@ EOF
   fi
 }
 
-
 # Download Dependency Files
 download_and_run_singbox() {
   ARCH=$(uname -m) && DOWNLOAD_DIR="." && mkdir -p "$DOWNLOAD_DIR" && FILE_INFO=()
   if [ "$ARCH" == "arm" ] || [ "$ARCH" == "arm64" ] || [ "$ARCH" == "aarch64" ]; then
-      FILE_INFO=("https://github.com/eooce/test/releases/download/arm64/sb web" "https://github.com/eooce/test/releases/download/arm64/bot13 bot" "https://github.com/eooce/test/releases/download/ARM/swith npm")
+      FILE_INFO=("https://github.com/eooce/test/releases/download/arm64/sb web" "https://github.com/eooce/test/releases/download/arm64/bot13 bot")
   elif [ "$ARCH" == "amd64" ] || [ "$ARCH" == "x86_64" ] || [ "$ARCH" == "x86" ]; then
-      FILE_INFO=("https://github.com/eooce/test/releases/download/freebsd/sb web" "https://github.com/eooce/test/releases/download/freebsd/server bot" "https://github.com/eooce/test/releases/download/freebsd/npm npm")
+      FILE_INFO=("https://github.com/yonggekkk/Cloudflare_vless_trojan/releases/download/serv00/sb web" "https://github.com/yonggekkk/Cloudflare_vless_trojan/releases/download/serv00/server bot")
   else
       echo "Unsupported architecture: $ARCH"
       exit 1
@@ -461,23 +439,6 @@ openssl req -new -x509 -days 3650 -key "private.key" -out "cert.pem" -subj "/CN=
 }
 EOF
 
-if [ -e "$(basename ${FILE_MAP[npm]})" ]; then
-    tlsPorts=("443" "8443" "2096" "2087" "2083" "2053")
-    if [[ "${tlsPorts[*]}" =~ "${NEZHA_PORT}" ]]; then
-      NEZHA_TLS="--tls"
-    else
-      NEZHA_TLS=""
-    fi
-    if [ -n "$NEZHA_SERVER" ] && [ -n "$NEZHA_PORT" ] && [ -n "$NEZHA_KEY" ]; then
-        export TMPDIR=$(pwd)
-        nohup ./"$(basename ${FILE_MAP[npm]})" -s ${NEZHA_SERVER}:${NEZHA_PORT} -p ${NEZHA_KEY} ${NEZHA_TLS} >/dev/null 2>&1 &
-        sleep 2
-        pgrep -x "$(basename ${FILE_MAP[npm]})" > /dev/null && green "$(basename ${FILE_MAP[npm]}) is running" || { red "$(basename ${FILE_MAP[npm]}) is not running, restarting..."; pkill -x "$(basename ${FILE_MAP[npm]})" && nohup ./"$(basename ${FILE_MAP[npm]})" -s "${NEZHA_SERVER}:${NEZHA_PORT}" -p "${NEZHA_KEY}" ${NEZHA_TLS} >/dev/null 2>&1 & sleep 2; purple "$(basename ${FILE_MAP[npm]}) restarted"; }
-    else
-        purple ""
-    fi
-fi
-
 if [ -e "$(basename ${FILE_MAP[web]})" ]; then
     nohup ./"$(basename ${FILE_MAP[web]})" run -c config.json >/dev/null 2>&1 &
     sleep 2
@@ -497,7 +458,7 @@ if [ -e "$(basename ${FILE_MAP[bot]})" ]; then
     pgrep -x "$(basename ${FILE_MAP[bot]})" > /dev/null && green "$(basename ${FILE_MAP[bot]}) is running" || { red "$(basename ${FILE_MAP[bot]}) is not running, restarting..."; pkill -x "$(basename ${FILE_MAP[bot]})" && nohup ./"$(basename ${FILE_MAP[bot]})" "${args}" >/dev/null 2>&1 & sleep 2; purple "$(basename ${FILE_MAP[bot]}) restarted"; }
 fi
 sleep 3
-rm -f "$(basename ${FILE_MAP[npm]})" "$(basename ${FILE_MAP[web]})"
+rm -f "$(basename ${FILE_MAP[web]})"
 }
 
 get_argodomain() {
@@ -522,17 +483,19 @@ get_argodomain() {
 get_links(){
 argodomain=$(get_argodomain)
 echo -e "\e[1;32mArgo域名:\e[1;35m${argodomain}\e[0m\n"
+green "可使用浏览器访问Argo域名：${argodomain} "
+green "如果显示【找不到 ${argodomain} 的网页，HTTP ERROR 404】：恭喜！说明Argo隧道已生效且可用"
 ISP=$(curl -s --max-time 2 https://speed.cloudflare.com/meta | awk -F\" '{print $26}' | sed -e 's/ /_/g' || echo "0")
 get_name() { if [ "$HOSTNAME" = "s1.ct8.pl" ]; then SERVER="CT8"; else SERVER=$(echo "$HOSTNAME" | cut -d '.' -f 1); fi; echo "$SERVER"; }
 NAME="$ISP-$(get_name)"
 rm -rf jh.txt
 vl_link="vless://$UUID@$IP:$vless_port?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$reym&fp=chrome&pbk=$public_key&type=tcp&headerType=none#$NAME-reality"
 echo "$vl_link" >> jh.txt
-vmws_link="vmess://$(echo "{ \"v\": \"2\", \"ps\": \"$NAME-vmess-ws\", \"add\": \"$IP\", \"port\": \"$vmess_port\", \"id\": \"$UUID\", \"aid\": \"0\", \"scy\": \"none\", \"net\": \"ws\", \"type\": \"none\", \"host\": \"\", \"path\": \"/$UUID-vm?ed=2048\", \"tls\": \"\", \"sni\": \"\", \"alpn\": \"\", \"fp\": \"\"}" | base64 -w0)"
+vmws_link="vmess://$(echo "{ \"v\": \"2\", \"ps\": \"$NAME-vmess-ws\", \"add\": \"$IP\", \"port\": \"$vmess_port\", \"id\": \"$UUID\", \"aid\": \"0\", \"scy\": \"auto\", \"net\": \"ws\", \"type\": \"none\", \"host\": \"\", \"path\": \"/$UUID-vm?ed=2048\", \"tls\": \"\", \"sni\": \"\", \"alpn\": \"\", \"fp\": \"\"}" | base64 -w0)"
 echo "$vmws_link" >> jh.txt
-vmatls_link="vmess://$(echo "{ \"v\": \"2\", \"ps\": \"$NAME-vmess-ws-tls-argo\", \"add\": \"icook.hk\", \"port\": \"8443\", \"id\": \"$UUID\", \"aid\": \"0\", \"scy\": \"none\", \"net\": \"ws\", \"type\": \"none\", \"host\": \"$argodomain\", \"path\": \"/$UUID-vm?ed=2048\", \"tls\": \"tls\", \"sni\": \"$argodomain\", \"alpn\": \"\", \"fp\": \"\"}" | base64 -w0)"
+vmatls_link="vmess://$(echo "{ \"v\": \"2\", \"ps\": \"$NAME-vmess-ws-tls-argo\", \"add\": \"icook.hk\", \"port\": \"8443\", \"id\": \"$UUID\", \"aid\": \"0\", \"scy\": \"auto\", \"net\": \"ws\", \"type\": \"none\", \"host\": \"$argodomain\", \"path\": \"/$UUID-vm?ed=2048\", \"tls\": \"tls\", \"sni\": \"$argodomain\", \"alpn\": \"\", \"fp\": \"\"}" | base64 -w0)"
 echo "$vmatls_link" >> jh.txt
-vma_link="vmess://$(echo "{ \"v\": \"2\", \"ps\": \"$NAME-vmess-ws-argo\", \"add\": \"icook.hk\", \"port\": \"8880\", \"id\": \"$UUID\", \"aid\": \"0\", \"scy\": \"none\", \"net\": \"ws\", \"type\": \"none\", \"host\": \"$argodomain\", \"path\": \"/$UUID-vm?ed=2048\", \"tls\": \"\"}" | base64 -w0)"
+vma_link="vmess://$(echo "{ \"v\": \"2\", \"ps\": \"$NAME-vmess-ws-argo\", \"add\": \"icook.hk\", \"port\": \"8880\", \"id\": \"$UUID\", \"aid\": \"0\", \"scy\": \"auto\", \"net\": \"ws\", \"type\": \"none\", \"host\": \"$argodomain\", \"path\": \"/$UUID-vm?ed=2048\", \"tls\": \"\"}" | base64 -w0)"
 echo "$vma_link" >> jh.txt
 hy2_link="hysteria2://$UUID@$IP:$hy2_port?sni=www.bing.com&alpn=h3&insecure=1#$NAME-hy2"
 echo "$hy2_link" >> jh.txt
@@ -541,7 +504,6 @@ baseurl=$(echo -e "$url" | base64 -w 0)
 echo
 sleep 2
 cat > list.txt <<EOF
-
 =================================================================================================
 
 一、Vless-reality分享链接如下：
@@ -566,13 +528,16 @@ CF节点落地到非CF网站的地区为：$IP所在地区
 
 
 二、Vmess-ws分享链接三形态如下：
+
 1、Vmess-ws主节点分享链接如下：
 $vmws_link
 
-2、Vmess-ws-tls_Argo分享链接如下 (客户端地址可自行修改优选IP，6个443系端口随便更换，该节点被墙也能用！)：
+2、Vmess-ws-tls_Argo分享链接如下： 
+(该节点为CDN优选IP节点，客户端地址可自行修改优选IP/域名，6个443系端口随便更换，被墙依旧能用！)
 $vmatls_link
 
-3、Vmess-ws_Argo分享链接如下 (客户端地址可自行修改优选IP，7个80系端口随便更换，该节点被墙也能用！)：
+3、Vmess-ws_Argo分享链接如下：
+(该节点为CDN优选IP节点，客户端地址可自行修改优选IP/域名，7个80系端口随便更换，被墙依旧能用！)
 $vma_link
 -------------------------------------------------------------------------------------------------
 
@@ -1080,13 +1045,13 @@ fi
 showsbclash(){
 if [[ -e $WORKDIR/sing_box.json ]]; then
 green "Sing_box配置文件如下，可上传到订阅类客户端上使用："
-yellow "Argo节点的地址可自行修改优选IP"
+yellow "其中Argo节点为CDN优选IP节点，server地址可自行修改优选IP/域名，被墙依旧能用！"
 sleep 2
 cat $WORKDIR/sing_box.json 
 echo
 echo
 green "Clash_meta配置文件如下，可上传到订阅类客户端上使用："
-yellow "Argo节点的地址可自行修改优选IP"
+yellow "其中Argo节点为CDN优选IP节点，server地址可自行修改优选IP/域名，被墙依旧能用！"
 sleep 2
 cat $WORKDIR/clash_meta.yaml
 echo
@@ -1098,14 +1063,15 @@ fi
 #主菜单
 menu() {
    clear
-   echo "======================================================"
+   echo "========================================================="
    purple "修改自Serv00|ct8老王sing-box安装脚本"
-   purple "一键三协议共存：vless-reality、Vmess-ws(Argo)、hysteria2"
-   purple "转载请著名处自老王，请勿滥用"
+   purple "转载请著名出自老王，请勿滥用"
    green "甬哥Github项目  ：github.com/yonggekkk"
    green "甬哥Blogger博客 ：ygkkk.blogspot.com"
    green "甬哥YouTube频道 ：www.youtube.com/@ygkkk"
-   echo "======================================================"
+   green "一键三协议共存：vless-reality、Vmess-ws(Argo)、hysteria2"
+   green "当前脚本版本：V24.12.14"
+   echo "========================================================="
    green  "1. 安装sing-box"
    echo   "------------------------------------------------------"
    red    "2. 卸载sing-box"
@@ -1114,7 +1080,7 @@ menu() {
    echo   "------------------------------------------------------"
    green  "4. 查看sing-box与clash-meta配置文件"
    echo   "------------------------------------------------------"
-   yellow "5. 清理所有进程"
+   yellow "5. 重置并清理所有服务进程(系统初始化)"
    echo   "------------------------------------------------------"
    red    "0. 退出脚本"
    echo   "======================================================"
